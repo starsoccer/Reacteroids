@@ -6,7 +6,7 @@ https://github.com/gaearon/react-transform-boilerplate
 
 ## Demo
 
-http://chriz001.github.io/Reacteroids/
+https://starsoccer.github.io/Reacteroids/
 
 ## Install
 
