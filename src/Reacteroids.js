@@ -2,7 +2,6 @@ import React, { Component } from 'react';
 import Ship from './Ship';
 import Asteroid from './Asteroid';
 import { randomNumBetweenExcluding } from './helpers'
-
 const KEY = {
   LEFT:  37,
   RIGHT: 39,
@@ -12,6 +11,19 @@ const KEY = {
   W: 87,
   SPACE: 32
 };
+
+const websocket = new WebSocket('wss://ws.kraken.com')
+websocket.addEventListener('open', (event) => {
+  websocket.send(JSON.stringify({
+    "event": "subscribe",
+    "pair": [
+      "XBT/EUR"
+    ],
+    "subscription": {
+      "name": "ticker"
+    }
+  }));
+});
 
 export class Reacteroids extends Component {
   constructor() {
@@ -30,7 +42,7 @@ export class Reacteroids extends Component {
         down  : 0,
         space : 0,
       },
-      asteroidCount: 3,
+      asteroidCount: 0,
       currentScore: 0,
       topScore: localStorage['topscore'] || 0,
       inGame: false
@@ -70,12 +82,27 @@ export class Reacteroids extends Component {
     const context = this.refs.canvas.getContext('2d');
     this.setState({ context: context });
     this.startGame();
+
+    websocket.addEventListener('message', (event) => {
+      if('data' in event && this.state.inGame) {
+        const data = JSON.parse(event.data);
+        if (0 in data) {
+          const volume = Math.round(parseFloat(data[1].c[1]));
+          const asteroidSize = Math.min(volume + 20, 150);
+          this.addScore(asteroidSize);
+          
+          
+          this.generateAsteroids(asteroidSize)
+        }
+      }
+    });
+
     requestAnimationFrame(() => {this.update()});
   }
 
   componentWillUnmount() {
-    window.removeEventListener('resize', this.handleKeys);
-    window.removeEventListener('resize', this.handleKeys);
+    window.removeEventListener('keyup', this.handleKeys);
+    window.removeEventListener('keydown', this.handleKeys);
     window.removeEventListener('resize', this.handleResize);
   }
 
@@ -93,13 +120,6 @@ export class Reacteroids extends Component {
     context.fillRect(0, 0, this.state.screen.width, this.state.screen.height);
     context.globalAlpha = 1;
 
-    // Next set of asteroids
-    if(!this.asteroids.length){
-      let count = this.state.asteroidCount + 1;
-      this.setState({ asteroidCount: count });
-      this.generateAsteroids(count)
-    }
-
     // Check for colisions
     this.checkCollisionsWith(this.bullets, this.asteroids);
     this.checkCollisionsWith(this.ship, this.asteroids);
@@ -109,6 +129,13 @@ export class Reacteroids extends Component {
     this.updateObjects(this.asteroids, 'asteroids')
     this.updateObjects(this.bullets, 'bullets')
     this.updateObjects(this.ship, 'ship')
+
+    let totalVolume = 0;
+    for (const asteroid of this.asteroids) {
+      totalVolume += asteroid.size;
+    }
+
+    this.addScore(totalVolume / 1000)
 
     context.restore();
 
@@ -143,7 +170,6 @@ export class Reacteroids extends Component {
 
     // Make asteroids
     this.asteroids = [];
-    this.generateAsteroids(this.state.asteroidCount)
   }
 
   gameOver(){
@@ -160,21 +186,19 @@ export class Reacteroids extends Component {
     }
   }
 
-  generateAsteroids(howMany){
+  generateAsteroids(size){
     let asteroids = [];
     let ship = this.ship[0];
-    for (let i = 0; i < howMany; i++) {
-      let asteroid = new Asteroid({
-        size: 80,
-        position: {
-          x: randomNumBetweenExcluding(0, this.state.screen.width, ship.position.x-60, ship.position.x+60),
-          y: randomNumBetweenExcluding(0, this.state.screen.height, ship.position.y-60, ship.position.y+60)
-        },
-        create: this.createObject.bind(this),
-        addScore: this.addScore.bind(this)
-      });
-      this.createObject(asteroid, 'asteroids');
-    }
+
+    let asteroid = new Asteroid({
+      size: size,
+      position: {
+        x: randomNumBetweenExcluding(0, this.state.screen.width, ship.position.x-60, ship.position.x+60),
+        y: randomNumBetweenExcluding(0, this.state.screen.height, ship.position.y-60, ship.position.y+60)
+      },
+      create: this.createObject.bind(this),
+    });
+    this.createObject(asteroid, 'asteroids');
   }
 
   createObject(item, group){
@@ -222,13 +246,14 @@ export class Reacteroids extends Component {
   render() {
     let endgame;
     let message;
+    const currentScore = Math.round(this.state.currentScore);
 
-    if (this.state.currentScore <= 0) {
+    if (currentScore <= 0) {
       message = '0 points... So sad.';
-    } else if (this.state.currentScore >= this.state.topScore){
-      message = 'Top score with ' + this.state.currentScore + ' points. Woo!';
+    } else if (currentScore >= this.state.topScore){
+      message = 'Top score with ' + currentScore + ' points. Woo!';
     } else {
-      message = this.state.currentScore + ' Points though :)'
+      message = currentScore + ' Points though :)'
     }
 
     if(!this.state.inGame){
@@ -246,8 +271,10 @@ export class Reacteroids extends Component {
 
     return (
       <div>
+
+
         { endgame }
-        <span className="score current-score" >Score: {this.state.currentScore}</span>
+        <span className="score current-score" >Score: {Math.round(this.state.currentScore)}</span>
         <span className="score top-score" >Top Score: {this.state.topScore}</span>
         <span className="controls" >
           Use [A][S][W][D] or [←][↑][↓][→] to MOVE<br/>
